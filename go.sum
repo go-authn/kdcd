@@ -22,8 +22,8 @@ github.com/go-asn1-ber/asn1-ber v1.5.8 h1:H9AZkK22UOmfX8J84ubyaZxKJZ3FMHVwn8swoM
 github.com/go-asn1-ber/asn1-ber v1.5.8/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
 github.com/go-authn/directory v0.17.0 h1:Y8rk7wzT45Hc7oDDfwK53YH+bG+i4U83ZDxMRf4hTek=
 github.com/go-authn/directory v0.17.0/go.mod h1:+aKPTcGBp/0X+1JFX6EGd9wa/b4t+D9DbZ6X0jltbh4=
-github.com/go-authn/kdc v0.8.0 h1:c4Qg0B+z6Ckg0pJ3g611FOm14ruDhWBjhGKFioZburQ=
-github.com/go-authn/kdc v0.8.0/go.mod h1:a8d6FtthL7m3VCKAIkpV9EhW7Q0u0TMreqRSX49iFs4=
+github.com/go-authn/kdc v0.9.0 h1:FNF08HfOgNavaPD7igxfQmivL3ggKR05WEGuWSKPlbQ=
+github.com/go-authn/kdc v0.9.0/go.mod h1:a8d6FtthL7m3VCKAIkpV9EhW7Q0u0TMreqRSX49iFs4=
 github.com/go-ldap/ldap/v3 v3.4.15 h1:eRB4f4Ecn1POL1mO86+uUDlecmyWsdiJwh60bAUS4UY=
 github.com/go-ldap/ldap/v3 v3.4.15/go.mod h1:jeD0c98EdZQCKKKKe4kTWs5aCf6y+j8KuYsYLznZSQk=
 github.com/go-sql-driver/mysql v1.10.1 h1:arlSnNLq6a5yxGxV7qg9lF4j0C+KwD6NbQyKr9QL6ME=

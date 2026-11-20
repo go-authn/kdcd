@@ -70,6 +70,11 @@ mint {                                    # optional: absent, there is no second
   callers        = ["https://login.poc.test"]   # URI subjectAltNames, matched exactly
 }
 
+kkdcp {                                   # optional: Kerberos over HTTPS (MS-KKDCP), behind a TLS proxy
+  listen = "127.0.0.1:8088"              # PLAIN HTTP on an interface, never the wildcard
+  # path = "/KdcProxy"                   # the default; the only path served
+}
+
 # The directory: who exists. Any number of these, in any mix.
 user "alice@poc.test" {}                  # a name; a TGT only through mint
 
@@ -110,6 +115,29 @@ Secret files are opened **once** and the open file is checked (regular file,
 mode, owner), so a check cannot be about one file and the read about another
 (the model is go-fileshare's `readKeytab`). `dsn_file` is read by `hcldir` by
 name, after being checked the same way.
+
+## Kerberos over HTTPS: the kkdcp block
+
+With `kkdcp { listen = "127.0.0.1:8088" }` kdcd also serves
+[MS-KKDCP](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/5bcebb8d-b747-4ee5-9453-428aec1c5c38)
+(go-authn/kdc's `KKDCPHandler`) on that address, plain HTTP, at `/KdcProxy`
+(or `path`). Put a TLS-terminating reverse proxy in front: Windows requires
+HTTPS, and a certificate is renewed there, not here. With Caddy:
+
+```
+kdc.example.org {
+	handle /KdcProxy {
+		reverse_proxy 127.0.0.1:8088
+	}
+}
+```
+
+Clients then reach the realm through port 443 and **port 88 need not be open to
+the internet**: MIT krb5 with `kdc = https://kdc.example.org/KdcProxy` in its
+realm, Windows with the `KdcProxy` policy (`authn-kinit setup --kdc-proxy`).
+The proxy answers what port 88 answers, so a person with no key is still
+`KDC_ERR_NULL_KEY` through it; it refuses non-POST (405), junk (400), another
+realm (403). `kdcd check` prints the block (`kkdcp  off` without it).
 
 ## The mint trust model
 

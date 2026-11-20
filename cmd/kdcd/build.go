@@ -252,6 +252,11 @@ func (r *Runtime) Summary() string {
 	} else {
 		fmt.Fprintf(&b, "mint         off\n")
 	}
+	if k := c.KKDCP; k != nil {
+		fmt.Fprintf(&b, "kkdcp        http://%s%s (MS-KKDCP, plain HTTP: TLS is the reverse proxy's)\n", k.Addr, k.Path)
+	} else {
+		fmt.Fprintf(&b, "kkdcp        off\n")
+	}
 	if c.Lifetime > 0 {
 		fmt.Fprintf(&b, "lifetime     %v\n", c.Lifetime)
 	}

@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOWORK: "off"
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+      - run: go vet ./...
+      - name: gofmt
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"; echo "$unformatted"; exit 1
+          fi
+      - run: go test -count=1 -v ./...
+
+  # `go install` names the binary after the last element of the package path:
+  # building the way a user installs it must give kdcd, and nothing else may be
+  # a main package.
+  binary-name:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod, check-latest: true, cache: true }
+      - name: build as installed, and check the binary's name
+        run: |
+          mkdir out
+          go build -trimpath -o out/ ./cmd/kdcd
+          ls out
+          test -f out/kdcd || { echo "::error::expected out/kdcd"; exit 1; }
+          if go list -f '{{.Name}} {{.ImportPath}}' ./... | grep -E '^main ' | grep -v '/cmd/kdcd$'; then
+            echo "::error::a main package outside cmd/kdcd"; exit 1
+          fi
+
+  # Pure Go, no cgo: it must build for every architecture it may be installed
+  # on, and 32-bit ones are where an overflow shows.
+  arches:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: "386" }
+          - { goos: linux, goarch: arm }
+          - { goos: linux, goarch: riscv64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: freebsd, goarch: amd64 }
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod, check-latest: true, cache: true }
+      - run: go vet ./...
+      - run: go build -trimpath ./...
+
+  # 386 runs natively on the amd64 runner.
+  test-386:
+    name: test linux/386
+    runs-on: ubuntu-latest
+    env:
+      GOARCH: "386"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod, check-latest: true, cache: true }
+      - run: go test -count=1 ./...
+
+  race:
+    name: race detector
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod, check-latest: true, cache: true }
+      - run: go test -race -count=1 ./...
+
+  # The toolchain is the one go.mod names (go-version-file), so a floor too
+  # low to carry the standard library's fixes is a finding HERE: govulncheck
+  # exits 3 on any, and the job fails.
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod, check-latest: true, cache: true }
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

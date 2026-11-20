@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-authn/directory"
+	"github.com/go-authn/directory/hcldir"
 )
 
 // Every refusal below is a pair: the valid configuration builds (the control),
@@ -92,16 +95,48 @@ func TestConfigRefusals(t *testing.T) {
 			writeFile(t, e.keyFile, old.keyPEM, 0o600)
 		}, want: "is valid from"},
 
-		{name: "a password file readable by its group", modes: true, mutate: func(e *env, s *spec) { chmod(t, e.alicePW, 0o640) }, want: "password_file"},
-		{name: "an empty password file", mutate: func(e *env, s *spec) { writeFile(t, e.alicePW, []byte("\n"), 0o600) }, want: "is empty"},
+		// The password path is gone (v0.2.0). Each refusal names the removal; the
+		// control of every one is the same configuration without the removed
+		// thing (the base builds, and TestConfigAccepts builds the clean forms).
+		{name: "a user with a password_file", mutate: func(e *env, s *spec) {
+			s.Users = "user \"dave\" {\n  password_file = \"/etc/kdcd/dave.pw\"\n}"
+		}, want: "no password path since v0.2.0"},
+		{name: "a user with an empty password_file", mutate: func(e *env, s *spec) {
+			s.Users = "user \"dave\" {\n  password_file = \"\"\n}"
+		}, want: "no password path since v0.2.0"},
+		{name: "a ldap bind_password_file", mutate: func(e *env, s *spec) {
+			s.Users = "users \"ldap\" {\n url = \"ldaps://127.0.0.1:1\"\n base_dn = \"dc=x\"\n bind_password_file = \"/etc/kdcd/bind.pw\"\n}"
+		}, want: "bind_password_file: kdcd has no password path since v0.2.0"},
+		{name: "a ldap bind_dn (a simple bind needs a password)", mutate: func(e *env, s *spec) {
+			s.Users = "users \"ldap\" {\n url = \"ldaps://127.0.0.1:1\"\n base_dn = \"dc=x\"\n bind_dn = \"cn=r,dc=x\"\n}"
+		}, want: "bind_dn"},
+		{name: "a users query with a password column", mutate: func(e *env, s *spec) {
+			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("file:"+filepath.Join(e.dir, "d.db")), 0o600)
+			s.Users = fmt.Sprintf("users \"sql\" {\n driver = \"sqlite\"\n dsn_file = %q\n users = \"select login, password from staff\"\n}", dsn)
+		}, want: `names a "password" column`},
+		{name: "a users query with an nt_hash column", mutate: func(e *env, s *spec) {
+			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("file:"+filepath.Join(e.dir, "d.db")), 0o600)
+			s.Users = fmt.Sprintf("users \"sql\" {\n driver = \"sqlite\"\n dsn_file = %q\n users = \"select login, nt_hash from staff\"\n}", dsn)
+		}, want: "nt_hash"},
+		{name: "a ldap attribute that is a password", mutate: func(e *env, s *spec) {
+			s.Users = "users \"ldap\" {\n url = \"ldaps://127.0.0.1:1\"\n base_dn = \"dc=x\"\n attributes = [\"mail\"]\n group_attributes = [\"userPassword\"]\n}"
+		}, want: "userPassword"},
+		{name: "a dsn that carries a password (key=value)", mutate: func(e *env, s *spec) {
+			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("host=db user=kdcd password=hunter2 dbname=staff"), 0o600)
+			s.Users = sqliteBlock(dsn)
+		}, want: "holds a password"},
+		{name: "a dsn that carries a password (url)", mutate: func(e *env, s *spec) {
+			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("postgres://kdcd:hunter2@db/staff"), 0o600)
+			s.Users = sqliteBlock(dsn)
+		}, want: "holds a password"},
+		{name: "a dsn that carries a password (mysql)", mutate: func(e *env, s *spec) {
+			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("kdcd:hunter2@tcp(db:3306)/staff"), 0o600)
+			s.Users = sqliteBlock(dsn)
+		}, want: "holds a password"},
 		{name: "a dsn file readable by everybody", modes: true, mutate: func(e *env, s *spec) {
 			dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("file:"+filepath.Join(e.dir, "d.db")), 0o644)
 			s.Users = sqliteBlock(dsn)
 		}, want: "dsn_file"},
-		{name: "a ldap bind password readable by everybody", modes: true, mutate: func(e *env, s *spec) {
-			pw := writeFile(t, filepath.Join(e.dir, "bind.pw"), []byte("x"), 0o644)
-			s.Users = fmt.Sprintf("users \"ldap\" {\n url = \"ldaps://127.0.0.1:1\"\n base_dn = \"dc=x\"\n bind_dn = \"cn=r,dc=x\"\n bind_password_file = %q\n}", pw)
-		}, want: "bind_password_file"},
 		{name: "a ldap url that sends passwords in the clear", mutate: func(e *env, s *spec) {
 			s.Users = "users \"ldap\" {\n url = \"ldap://ldap.example.org\"\n base_dn = \"dc=x\"\n}"
 		}, want: "in the clear"},
@@ -197,6 +232,17 @@ func TestConfigAccepts(t *testing.T) {
 			t.Fatalf("mint address %q", cfg.Mint.Addr)
 		}
 	})
+	t.Run("the clean forms of what v0.2.0 refuses", func(t *testing.T) {
+		// Controls for the password refusals: a directory query with no
+		// secret column, and an anonymous ldap source, both load.
+		e := newEnv(t)
+		s := e.spec()
+		s.Users = "users \"ldap\" {\n url = \"ldaps://127.0.0.1:1\"\n base_dn = \"dc=x\"\n attributes = [\"mail\"]\n group_attributes = [\"gidNumber\"]\n}\n" +
+			"users \"sql\" {\n driver = \"sqlite\"\n dsn_file = \"/x\"\n users = \"select login as name, mail from staff\"\n}"
+		if _, err := LoadConfig(e.write(s)); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("a sqlite directory", func(t *testing.T) {
 		e := newEnv(t)
 		dsn := writeFile(t, filepath.Join(e.dir, "dsn"), []byte("file:"+filepath.Join(e.dir, "d.db")), 0o600)
@@ -255,5 +301,33 @@ func TestKeytabTooLargeIsRefused(t *testing.T) {
 	_, err := readKeytab(e.keytab)
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// Whatever a source carries, the KDC sees names: an identity that holds a
+// password, passed through nameOnly, can derive no key. The control is the same
+// identity before the wrapper, which can.
+func TestNameOnlyStripsWhatProvesAPerson(t *testing.T) {
+	src, err := hcldir.File([]hcldir.UserBlock{{Name: "dave", Password: "a password somebody wrote"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	derive := func(id *directory.Identity) error {
+		_, err := id.Derive(func(string) ([]byte, error) { return []byte("k"), nil })
+		return err
+	}
+	raw, err := src.Identities()
+	if err != nil || len(raw) != 1 {
+		t.Fatal(raw, err)
+	}
+	if err := derive(raw[0]); err != nil {
+		t.Fatalf("the control cannot derive a key: %v", err)
+	}
+	ids, err := nameOnly{directory.NewSet(src)}.Identities()
+	if err != nil || len(ids) != 1 || ids[0].Name() != "dave" {
+		t.Fatal(ids, err)
+	}
+	if err := derive(ids[0]); err == nil {
+		t.Fatal("an identity that went through nameOnly still derives a key")
 	}
 }

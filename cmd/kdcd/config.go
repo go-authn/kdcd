@@ -56,14 +56,21 @@ type listenBlock struct {
 	AllowWildcard bool   `hcl:"allow_wildcard,optional"`
 }
 
-// A userBlock is somebody written in the configuration. It names a person and,
-// optionally, the file holding the password the KDC derives an AS-REQ key from.
-// A person with no password_file can still be given a TGT through the mint
-// listener, which is what a passkey login at go-authn/bridge does.
+// A userBlock is somebody written in the configuration: a name, and nothing
+// that proves them. A person gets a TGT only through the mint listener, from a
+// caller that authenticated them (a passkey login at go-authn/bridge).
+//
+// PasswordFile is in the schema ONLY so that a configuration that still has it
+// is refused with a message naming the removal, instead of the decoder's
+// "unsupported argument". It is a pointer so that even `password_file = ""` is
+// seen as written.
 type userBlock struct {
-	Name         string `hcl:"name,label"`
-	PasswordFile string `hcl:"password_file,optional"`
+	Name         string  `hcl:"name,label"`
+	PasswordFile *string `hcl:"password_file,optional"`
 }
+
+// removedInV2 ends every refusal of a password path: there is none to enable.
+const removedInV2 = "kdcd has no password path since v0.2.0 (removed, breaking): a person gets a TGT only through the mint listener, after a caller authenticated them with a passkey"
 
 type mintBlock struct {
 	Address      string   `hcl:"address,optional"`
@@ -240,13 +247,47 @@ func (fc *fileConfig) resolve() (*Config, error) {
 			return nil, fmt.Errorf("user %q is declared twice", p.Name)
 		}
 		names[p.Name] = true
+		if p.PasswordFile != nil {
+			return nil, fmt.Errorf("user %q: password_file: %s", p.Name, removedInV2)
+		}
 	}
 	for _, b := range c.Users {
+		if err := checkNoPassword(b); err != nil {
+			return nil, fmt.Errorf("users %q: %w", b.Kind, err)
+		}
 		if err := b.Check(); err != nil {
 			return nil, fmt.Errorf("users %q: %w", b.Kind, err)
 		}
 	}
 	return c, nil
+}
+
+// passwordWord finds a column or attribute named like a secret that proves a
+// person. It is a refusal at load, for the message; the guarantee that no
+// password reaches the KDC is structural (see nameOnly), whatever this misses.
+var passwordWord = regexp.MustCompile(`(?i)\b(user_?password|password|passwd|pwd|nt_?hash|password_?hash|passhash)\b`)
+
+// checkNoPassword refuses a directory block that is written to carry, or to
+// reach the directory with, a password.
+func checkNoPassword(b hcldir.Block) error {
+	if b.BindPasswordFile != "" {
+		return fmt.Errorf("bind_password_file: %s", removedInV2)
+	}
+	if b.BindDN != "" {
+		return fmt.Errorf("bind_dn: a simple bind proves itself with a password: %s. An ldap source is read anonymously (hcldir has no client-certificate or SASL EXTERNAL bind yet)", removedInV2)
+	}
+	for name, q := range map[string]string{"users": b.UsersQuery, "users_attributes": b.UsersAttributesQuery,
+		"groups": b.GroupsQuery, "groups_attributes": b.GroupsAttributesQuery} {
+		if m := passwordWord.FindString(q); m != "" {
+			return fmt.Errorf("%s names a %q column: %s. A directory says who exists and their groups, nothing that proves them", name, m, removedInV2)
+		}
+	}
+	for _, a := range append(append([]string(nil), b.Attributes...), b.GroupAttributes...) {
+		if m := passwordWord.FindString(a); m != "" {
+			return fmt.Errorf("attributes names %q: %s", m, removedInV2)
+		}
+	}
+	return nil
 }
 
 func parseDuration(name, v string, lo, hi time.Duration) (time.Duration, error) {

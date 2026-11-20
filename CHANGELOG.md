@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0 (breaking)
+
+- Removed: every password path. A `user` block takes no `password_file`; an
+  AS-REQ for a person is answered `KDC_ERR_NULL_KEY` by design, and a person
+  gets a TGT only through the mint listener. Directories (`users "sql"`,
+  `users "ldap"`, `user`) say who exists and their groups, nothing else: the
+  KDC is handed name-only identities, so nothing a source carries can derive a
+  key.
+- Refused at load, naming the removal and the version: `password_file`,
+  `bind_password_file`, `bind_dn` (a simple bind is a password), a `users` or
+  `groups` query or attribute naming a password or NT-hash column, and a DSN
+  that carries a password.
+- Migration: delete those lines; give services and krbtgt random keytab keys.
+  An `ldap` source is read anonymously until go-authn/directory's `hcldir`
+  offers a client-certificate or SASL EXTERNAL bind.
+
 ## v0.1.0
 
 - Added: `kdcd`, a KDC daemon for one realm on go-authn/kdc v0.8.0: UDP and TCP

@@ -46,7 +46,7 @@ func TestCheckPrintsASummary(t *testing.T) {
 	}
 	// ⛔ A summary names keys, never prints one.
 	kt, _ := os.ReadFile(e.keytab)
-	if bytes.Contains([]byte(out), kt[:16]) || strings.Contains(out, alicePassword) {
+	if bytes.Contains([]byte(out), kt[:16]) {
 		t.Errorf("the summary holds a secret:\n%s", out)
 	}
 }
@@ -130,9 +130,10 @@ func TestRunServesAndStops(t *testing.T) {
 	if addr == "" {
 		t.Fatalf("it never said where it listens; stdout %q stderr %q", out.String(), errb.String())
 	}
-	cl := krbClient(t, addr, "alice", alicePassword, true)
-	if err := cl.Login(); err != nil {
-		t.Fatalf("AS exchange against the program: %v", err)
+	// The program answers: a person has no key, and it says so.
+	cl := krbClient(t, addr, "alice", "anything", true)
+	if err := cl.Login(); err == nil || !strings.Contains(err.Error(), "NULL_KEY") {
+		t.Fatalf("AS exchange against the program: %v, want KDC_ERR_NULL_KEY", err)
 	}
 	cancel()
 	select {

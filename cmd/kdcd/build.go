@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -146,15 +148,16 @@ func openPeople(cfg *Config) (directory.Source, error) {
 		return nil, err
 	}
 	for _, b := range cfg.Users {
-		// hcldir reads these two by name; the permissions are checked here,
-		// beforehand, by the rule every other secret meets.
-		for _, f := range []struct{ path, what string }{
-			{b.DSNFile, "users " + fmt.Sprintf("%q", b.Kind) + " dsn_file"},
-			{b.BindPasswordFile, "users " + fmt.Sprintf("%q", b.Kind) + " bind_password_file"}} {
-			if f.path == "" {
-				continue
+		// hcldir reads the DSN by name; its permissions are checked here,
+		// beforehand, by the rule every other secret meets, and it must carry
+		// no password.
+		if b.DSNFile != "" {
+			what := fmt.Sprintf("users %q dsn_file", b.Kind)
+			raw, err := readSecret(b.DSNFile, what)
+			if err != nil {
+				return fail(err)
 			}
-			if _, err := readSecret(f.path, f.what); err != nil {
+			if err := checkDSN(raw, what); err != nil {
 				return fail(err)
 			}
 		}
@@ -167,18 +170,7 @@ func openPeople(cfg *Config) (directory.Source, error) {
 	if len(cfg.People) > 0 {
 		var ub []hcldir.UserBlock
 		for _, p := range cfg.People {
-			u := hcldir.UserBlock{Name: p.Name}
-			if p.PasswordFile != "" {
-				raw, err := readSecret(p.PasswordFile, fmt.Sprintf("user %q password_file", p.Name))
-				if err != nil {
-					return fail(err)
-				}
-				u.Password = strings.TrimRight(string(raw), "\r\n")
-				if u.Password == "" {
-					return fail(fmt.Errorf("user %q password_file %s is empty", p.Name, p.PasswordFile))
-				}
-			}
-			ub = append(ub, u)
+			ub = append(ub, hcldir.UserBlock{Name: p.Name})
 		}
 		src, err := hcldir.File(ub, nil)
 		if err != nil {
@@ -186,8 +178,49 @@ func openPeople(cfg *Config) (directory.Source, error) {
 		}
 		set.Add(src)
 	}
-	return set, nil
+	return nameOnly{set}, nil
 }
+
+// nameOnly is the directory the KDC sees: who exists, and nothing that proves
+// them. Whatever a source carried (a password, an NT hash, a key), the
+// identities rebuilt here hold only the name, so the library can derive no
+// long-term key and answers every AS-REQ for a person KDC_ERR_NULL_KEY. That is
+// the structural half of "no password path"; the load-time refusals are the
+// half that says why.
+type nameOnly struct{ *directory.Set }
+
+func (n nameOnly) Identities() ([]*directory.Identity, error) {
+	ids, err := n.Set.Identities()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*directory.Identity, len(ids))
+	for i, id := range ids {
+		out[i] = directory.NewIdentity(id.Name())
+	}
+	return out, nil
+}
+
+// checkDSN refuses a connection string that carries a password: a database
+// reached by a client certificate or a local socket needs none. Best effort on
+// the three spellings the drivers take; nameOnly holds whatever it misses.
+func checkDSN(raw []byte, what string) error {
+	s := strings.TrimSpace(string(raw))
+	if passwordWord.MatchString(s) {
+		return fmt.Errorf("%s holds a password: %s", what, removedInV2)
+	}
+	if u, err := url.Parse(s); err == nil && u.User != nil {
+		if _, has := u.User.Password(); has {
+			return fmt.Errorf("%s holds a password: %s", what, removedInV2)
+		}
+	}
+	if mysqlDSN.MatchString(s) {
+		return fmt.Errorf("%s holds a password (user:password@): %s", what, removedInV2)
+	}
+	return nil
+}
+
+var mysqlDSN = regexp.MustCompile(`^[^:/@?\s]+:[^@\s]*@`)
 
 // Summary describes what a configuration serves, for `kdcd check`. It prints
 // names, types and versions, never a key.

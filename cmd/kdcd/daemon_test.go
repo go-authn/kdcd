@@ -36,49 +36,46 @@ func krbClient(t *testing.T, addr, user, password string, tcp bool) *client.Clie
 	return client.NewWithPassword(user, testRealm, password, cfg, client.DisablePAFXFAST(true))
 }
 
-const alicePassword = "alice's test password"
-
-// The daemon answers an AS-REQ from a gokrb5 client with a TGT, over UDP and
-// over TCP; the refusals are the right ones.
-func TestASREP(t *testing.T) {
+// No password path: a person has no key, so an AS-REQ for them is refused with
+// KDC_ERR_NULL_KEY whatever the client sends, over UDP and over TCP; a stranger
+// is told something else (the control: the refusal is about the key, not about
+// every request); and the same person IS served by the mint listener.
+func TestAnASREQForAPersonIsRefusedByDesign(t *testing.T) {
 	e := newEnv(t)
 	d := e.start(e.spec())
 
+	// The control: alice exists and the realm serves her, through mint.
+	resp, err := mintRequest(e.mintClient(&e.goodCaller.pair), d.MintAddr(), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the control: mint for alice is %d", resp.StatusCode)
+	}
+
 	for _, tcp := range []bool{false, true} {
 		name := map[bool]string{false: "udp", true: "tcp"}[tcp]
-		t.Run(name+" alice gets a TGT", func(t *testing.T) {
-			cl := krbClient(t, d.KDCAddr(), "alice", alicePassword, tcp)
-			if err := cl.Login(); err != nil {
-				t.Fatalf("AS exchange: %v", err)
-			}
-		})
-		t.Run(name+" a wrong password is refused", func(t *testing.T) {
-			cl := krbClient(t, d.KDCAddr(), "alice", "not her password", tcp)
-			err := cl.Login()
+		for _, who := range []string{"alice", "carol"} {
+			t.Run(name+" "+who+" has no key", func(t *testing.T) {
+				for _, pw := range []string{"anything", "alice's test password"} {
+					err := krbClient(t, d.KDCAddr(), who, pw, tcp).Login()
+					if err == nil {
+						t.Fatalf("an AS-REQ with password %q got a TGT", pw)
+					}
+					if !strings.Contains(err.Error(), "NULL_KEY") {
+						t.Fatalf("password %q: got %v, want KDC_ERR_NULL_KEY", pw, err)
+					}
+				}
+			})
+		}
+		t.Run(name+" a stranger is refused differently", func(t *testing.T) {
+			err := krbClient(t, d.KDCAddr(), "mallory", "anything", tcp).Login()
 			if err == nil {
-				t.Fatal("a wrong password got a TGT")
-			}
-			if !strings.Contains(err.Error(), "PREAUTH_FAILED") {
-				t.Fatalf("got %v, want KDC_ERR_PREAUTH_FAILED", err)
-			}
-		})
-		t.Run(name+" a person with no password has no key", func(t *testing.T) {
-			// carol is in the directory with no password_file: only the mint
-			// listener can give her a TGT. An AS-REQ is refused, not answered
-			// with a ticket nobody could have earned.
-			cl := krbClient(t, d.KDCAddr(), "carol", "anything", tcp)
-			err := cl.Login()
-			if err == nil {
-				t.Fatal("a person with no password got a TGT")
-			}
-			if !strings.Contains(err.Error(), "NULL_KEY") {
-				t.Fatalf("got %v, want KDC_ERR_NULL_KEY", err)
-			}
-		})
-		t.Run(name+" a stranger is refused", func(t *testing.T) {
-			cl := krbClient(t, d.KDCAddr(), "mallory", "anything", tcp)
-			if err := cl.Login(); err == nil {
 				t.Fatal("an unknown principal got a TGT")
+			}
+			if strings.Contains(err.Error(), "NULL_KEY") {
+				t.Fatalf("a stranger is told she has no key: %v", err)
 			}
 		})
 	}

@@ -112,6 +112,9 @@ func runDaemon(cmd *cobra.Command, configPath string) error {
 	if a := d.MintAddr(); a != "" {
 		fmt.Fprintf(out, "kdcd: mint on https://%s/mint (mutual TLS)\n", a)
 	}
+	if a := d.KKDCPAddr(); a != "" {
+		fmt.Fprintf(out, "kdcd: kkdcp on http://%s%s (MS-KKDCP, behind a TLS proxy)\n", a, rt.Cfg.KKDCP.Path)
+	}
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

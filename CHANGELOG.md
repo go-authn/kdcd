@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0
+
+- Added: a `kkdcp { listen = "IP:port" }` block (optional `path`, default
+  `/KdcProxy`): Kerberos over HTTPS ([MS-KKDCP]) from go-authn/kdc's
+  `KKDCPHandler`, on plain HTTP behind a TLS proxy such as Caddy. Off by
+  default; `kdcd check` prints it; a wildcard, a name, or an unsafe path is
+  refused at load.
+
 ## v0.2.0 (breaking)
 
 - Removed: every password path. A `user` block takes no `password_file`; an

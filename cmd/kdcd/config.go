@@ -45,6 +45,7 @@ type fileConfig struct {
 
 	Listen *listenBlock `hcl:"listen,block"`
 	Mint   *mintBlock   `hcl:"mint,block"`
+	KKDCP  *kkdcpBlock  `hcl:"kkdcp,block"`
 
 	// Directory blocks: where people come from (go-authn/directory/hcldir).
 	Users  []hcldir.Block `hcl:"users,block"`
@@ -72,6 +73,19 @@ type userBlock struct {
 // removedInV2 ends every refusal of a password path: there is none to enable.
 const removedInV2 = "kdcd has no password path since v0.2.0 (removed, breaking): a person gets a TGT only through the mint listener, after a caller authenticated them with a passkey"
 
+// kkdcpBlock turns on Kerberos over HTTPS (MS-KKDCP, go-authn/kdc's
+// KKDCPHandler). The listener is PLAIN HTTP: TLS is a reverse proxy's job
+// (Caddy), because Windows requires HTTPS and a certificate is renewed there,
+// not here. Hence an address that names an interface, never a wildcard.
+type kkdcpBlock struct {
+	Listen string `hcl:"listen"`
+	Path   string `hcl:"path,optional"`
+}
+
+// defaultKKDCPPath is where Windows' KdcProxy policy and MIT's krb5.conf
+// examples point (`https://host/KdcProxy`).
+const defaultKKDCPPath = "/KdcProxy"
+
 type mintBlock struct {
 	Address      string   `hcl:"address,optional"`
 	CertFile     string   `hcl:"cert_file"`
@@ -91,8 +105,15 @@ type Config struct {
 	MaxSkew    time.Duration // zero: five minutes
 	KDCAddr    string
 	Mint       *MintConfig
+	KKDCP      *KKDCPConfig
 	Users      []hcldir.Block
 	People     []userBlock
+}
+
+// KKDCPConfig is the optional MS-KKDCP listener (plain HTTP, behind a TLS proxy).
+type KKDCPConfig struct {
+	Addr string
+	Path string
 }
 
 // MintConfig is the optional mint listener.
@@ -235,6 +256,24 @@ func (fc *fileConfig) resolve() (*Config, error) {
 		c.Mint = mc
 	}
 
+	if k := fc.KKDCP; k != nil {
+		kc := &KKDCPConfig{Path: defaultKKDCPPath}
+		if kc.Addr, err = checkListen("kkdcp listen", k.Listen, false); err != nil {
+			return nil, err
+		}
+		if k.Path != "" {
+			kc.Path = k.Path
+		}
+		if err := checkKKDCPPath(kc.Path); err != nil {
+			return nil, fmt.Errorf("kkdcp: path: %w", err)
+		}
+		// Port 0 is "any free port": two of them never collide.
+		if !strings.HasSuffix(kc.Addr, ":0") && (kc.Addr == c.KDCAddr || (c.Mint != nil && kc.Addr == c.Mint.Addr)) {
+			return nil, fmt.Errorf("kkdcp listen %s is the address of another listener", kc.Addr)
+		}
+		c.KKDCP = kc
+	}
+
 	if len(c.Users) == 0 && len(c.People) == 0 {
 		return nil, fmt.Errorf("no directory: write a users \"sql\" or users \"ldap\" block, or user blocks")
 	}
@@ -331,6 +370,22 @@ func checkListen(what, addr string, allowWildcard bool) (string, error) {
 		return "", fmt.Errorf("%s %q is the wildcard, which serves every interface: name one, or set allow_wildcard = true in listen", what, addr)
 	}
 	return net.JoinHostPort(ip.String(), strconv.FormatUint(n, 10)), nil
+}
+
+// checkKKDCPPath accepts an absolute URL path of plain characters: it is
+// matched exactly by the mux, and a path with a pattern's syntax ("{x}", a
+// host, a trailing slash that makes it a subtree) would serve more than named.
+func checkKKDCPPath(p string) error {
+	if len(p) < 2 || p[0] != '/' || strings.HasSuffix(p, "/") {
+		return fmt.Errorf("%q: write an absolute path without a trailing slash, such as /KdcProxy", p)
+	}
+	for _, r := range p {
+		ok := r == '/' || r == '-' || r == '_' || r == '.' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if !ok || strings.Contains(p, "//") || strings.Contains(p, "..") {
+			return fmt.Errorf("%q: letters, digits and - _ . / only, no empty or .. segment", p)
+		}
+	}
+	return nil
 }
 
 // checkServiceName accepts service/host, no realm, no further slash.

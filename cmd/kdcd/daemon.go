@@ -25,6 +25,8 @@ type Daemon struct {
 	udp     net.PacketConn
 	mintLn  net.Listener
 	mintSrv *http.Server
+	kkLn    net.Listener
+	kkSrv   *http.Server
 
 	errc chan error
 	once sync.Once
@@ -75,10 +77,38 @@ func Start(rt *Runtime, logf func(format string, args ...any)) (*Daemon, error) 
 		}
 	}
 
+	if k := c.KKDCP; k != nil {
+		ln, err := net.Listen("tcp", k.Addr)
+		if err != nil {
+			d.tcp.Close()
+			d.udp.Close()
+			if d.mintLn != nil {
+				d.mintLn.Close()
+			}
+			return nil, fmt.Errorf("kkdcp listener %s: %w", k.Addr, err)
+		}
+		d.kkLn = ln
+		mux := http.NewServeMux()
+		// Only the one path, POST-only inside the handler; nothing else is served.
+		mux.Handle(k.Path, srv.KKDCPHandler())
+		d.kkSrv = &http.Server{
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    16 << 10,
+			ErrorLog:          log.New(discard{}, "", 0),
+		}
+	}
+
 	d.serve("kdc udp", func() error { return srv.ServeUDP(d.udp) })
 	d.serve("kdc tcp", func() error { return srv.ServeTCP(d.tcp) })
 	if d.mintSrv != nil {
 		d.serve("mint", func() error { return d.mintSrv.Serve(d.mintLn) })
+	}
+	if d.kkSrv != nil {
+		d.serve("kkdcp", func() error { return d.kkSrv.Serve(d.kkLn) })
 	}
 	return d, nil
 }
@@ -119,6 +149,14 @@ func (d *Daemon) MintAddr() string {
 	return d.mintLn.Addr().String()
 }
 
+// KKDCPAddr is where the MS-KKDCP listener answers, "" when it is off.
+func (d *Daemon) KKDCPAddr() string {
+	if d.kkLn == nil {
+		return ""
+	}
+	return d.kkLn.Addr().String()
+}
+
 // Shutdown stops accepting, drops what is being served and waits for it, at
 // most until ctx is done.
 func (d *Daemon) Shutdown(ctx context.Context) error {
@@ -128,6 +166,14 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 			err = d.mintSrv.Shutdown(ctx)
 			if err != nil {
 				d.mintSrv.Close()
+			}
+		}
+		if d.kkSrv != nil {
+			if kerr := d.kkSrv.Shutdown(ctx); kerr != nil {
+				d.kkSrv.Close()
+				if err == nil {
+					err = kerr
+				}
 			}
 		}
 		d.srv.Close()

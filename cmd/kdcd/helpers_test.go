@@ -150,12 +150,11 @@ func (ca *testCA) issue(t testing.TB, server bool, uris []string, notAfter time.
 // --- a configuration ---
 
 // env is a directory of valid files for realm POC.TEST: a keytab holding
-// krbtgt and cifs, a password for alice, and the mint listener's certificates.
+// krbtgt and cifs, and the mint listener's certificates.
 type env struct {
 	t           *testing.T
 	dir         string
 	keytab      string
-	alicePW     string
 	certFile    string
 	keyFile     string
 	clientCA    string
@@ -172,7 +171,6 @@ func newEnv(t *testing.T) *env {
 	e := &env{t: t, dir: dir}
 	e.keytab = writeFile(t, filepath.Join(dir, "kdc.keytab"),
 		newKeytab(t, testRealm, "krbtgt/"+testRealm, "cifs/fs.poc.test"), 0o600)
-	e.alicePW = writeFile(t, filepath.Join(dir, "alice.pw"), []byte("alice's test password\n"), 0o600)
 	e.ca = newCA(t, "mint server CA")
 	e.callersCA = newCA(t, "callers CA")
 	e.serverCert = e.ca.issue(t, true, nil, time.Now().Add(time.Hour))
@@ -208,7 +206,7 @@ func (e *env) spec() *spec {
   client_ca_file = %q
   callers        = [%q]
 }`, e.certFile, e.keyFile, e.clientCA, testCaller),
-		Users: fmt.Sprintf("user \"alice\" {\n  password_file = %q\n}\nuser \"carol\" {}\n", e.alicePW),
+		Users: "user \"alice\" {}\nuser \"carol\" {}\n",
 	}
 }
 

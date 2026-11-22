@@ -174,3 +174,32 @@ func TestAMissingCredentialFailsTheBuild(t *testing.T) {
 		t.Fatal("built without the credential")
 	}
 }
+
+// Platform-independent: where() names the reference when there is one, and a
+// reference that parses but cannot be opened is an error, never an empty secret.
+func TestKeyMaterialWhereAndUnopenable(t *testing.T) {
+	if got := (keyMaterial{From: "systemd-creds:a"}).where(); got != "systemd-creds:a" {
+		t.Fatalf("where = %q", got)
+	}
+	if got := (keyMaterial{File: "/p"}).where(); got != "/p" {
+		t.Fatalf("where = %q", got)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", t.TempDir())
+	b, err := readKeyMaterial(keyMaterial{From: "systemd-creds:absent"}, "keytab")
+	if err == nil || len(b) != 0 {
+		t.Fatalf("got %d bytes, %v", len(b), err)
+	}
+}
+
+// A reference with no scheme is refused when the configuration is loaded,
+// before anything is opened.
+func TestAReferenceWithNoSchemeIsRefusedAtLoad(t *testing.T) {
+	e := newEnv(t)
+	s := e.spec()
+	s.KeytabFile = ""
+	s.Extra = fmt.Sprintf("keytab_from = %q", e.keytab)
+	_, err := LoadConfig(e.write(s))
+	if !errors.Is(err, secretsource.ErrScheme) && !errors.Is(err, secretsource.ErrBadRef) {
+		t.Fatalf("got %v", err)
+	}
+}

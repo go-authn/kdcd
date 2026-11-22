@@ -173,6 +173,11 @@ func readConfigFile(path string) ([]byte, error) {
 		if m := fi.Mode().Perm(); m&0o022 != 0 {
 			return nil, fmt.Errorf("%s is mode %04o: group and others must not be able to write it (chmod 0640 or 0600)", path, m)
 		}
+		// The mode is the owner's to change: a file owned by another account
+		// is one that account can make writable again after this check.
+		if err := ownerOK(fi); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxConfig+1))
 	if err != nil {

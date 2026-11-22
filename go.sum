@@ -24,10 +24,12 @@ github.com/go-asn1-ber/asn1-ber v1.5.8 h1:H9AZkK22UOmfX8J84ubyaZxKJZ3FMHVwn8swoM
 github.com/go-asn1-ber/asn1-ber v1.5.8/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
 github.com/go-authn/directory v0.17.0 h1:Y8rk7wzT45Hc7oDDfwK53YH+bG+i4U83ZDxMRf4hTek=
 github.com/go-authn/directory v0.17.0/go.mod h1:+aKPTcGBp/0X+1JFX6EGd9wa/b4t+D9DbZ6X0jltbh4=
+github.com/go-authn/harden v0.2.0 h1:xPWLSeelcFEo4gJU5aTNWngZn6R/VQ9bTGDx3BRrUb0=
+github.com/go-authn/harden v0.2.0/go.mod h1:sceLxhnMHtExHEp9bU8XHKCw2fp+WFjh6Ri6Yxu2aVA=
 github.com/go-authn/kdc v0.10.0 h1:Cptt3iEjUX5o6ZSDAsrPIIHn55wjED2evyMRtf1p618=
 github.com/go-authn/kdc v0.10.0/go.mod h1:a8d6FtthL7m3VCKAIkpV9EhW7Q0u0TMreqRSX49iFs4=
-github.com/go-authn/secretsource v0.8.0 h1:3pUW2vvuftmeikSrxY5a9ZMye5Y8BTplMEKfc7IeeXU=
-github.com/go-authn/secretsource v0.8.0/go.mod h1:LHIVIzADGmzgE5IwtqTmKMcwM6RGvUXX+qZQojtmzlM=
+github.com/go-authn/secretsource v0.9.0 h1:N2y+g1LIhtC9+u42IGCNcqB2s6deZ5YUeJt1yGBWyfw=
+github.com/go-authn/secretsource v0.9.0/go.mod h1:59e2lgmXt36JIyrCjlYjLG5BYG+umxYJSAmHb5J+gfk=
 github.com/go-freedesktop/secretservice v0.4.0 h1:PV2fLZ/ZsL2R5T6CMBOQ/5lmwP73rUJ1PN0FG6v5gQ0=
 github.com/go-freedesktop/secretservice v0.4.0/go.mod h1:JQ2M/y+g4Img7KM2bleUTz2EruH9fpkJ4GHqQpYVAMo=
 github.com/go-ldap/ldap/v3 v3.4.15 h1:eRB4f4Ecn1POL1mO86+uUDlecmyWsdiJwh60bAUS4UY=

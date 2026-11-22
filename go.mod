@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/go-authn/directory v0.17.0
 	github.com/go-authn/kdc v0.10.0
-	github.com/go-authn/secretsource v0.8.0
+	github.com/go-authn/secretsource v0.9.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.12.0
@@ -24,6 +24,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
+	github.com/go-authn/harden v0.2.0 // indirect
 	github.com/go-freedesktop/secretservice v0.4.0 // indirect
 	github.com/go-ldap/ldap/v3 v3.4.15 // indirect
 	github.com/go-macos/keychain v0.3.1 // indirect

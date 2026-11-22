@@ -48,7 +48,8 @@ caller that authenticated them with a passkey (go-authn/bridge).
 
 ## Configuration
 
-One HCL file. Nothing in it is a secret; every secret is a file.
+One HCL file. Nothing in it is a secret; every secret is a file or a
+secretsource reference.
 
 ```hcl
 realm       = "POC.TEST"                 # a DNS name in capitals
@@ -91,6 +92,52 @@ users "ldap" {                            # read anonymously
 
 The `users` blocks are [go-authn/directory/hcldir](https://github.com/go-authn/directory)'s;
 kdcd refuses the parts of them that carry a password (see above).
+
+### Where the keytab and the mint key come from
+
+kdcd has exactly two secrets: the keytab (it holds the `krbtgt` key, which signs
+every ticket) and the mint listener's TLS key. It takes **no password, no DSN
+password and no token**: a DSN or a password is refused (see below), so there is
+nothing of that kind to move out of the configuration.
+
+Each of the two is named one of two ways, and naming both is an error:
+
+| Configuration | Reads |
+| --- | --- |
+| `keytab_file = "/etc/kdcd/kdc.keytab"`, `key_file = "..."` (in `mint`) | a file, opened once, checked on the open file (regular, mode 0600, owner root or the daemon's), read byte for byte, up to 1 MiB |
+| `keytab_from = "systemd-creds:kdc-keytab"`, `key_from = "systemd-creds:mint-key"` | a [go-authn/secretsource](https://github.com/go-authn/secretsource) reference (v0.8.0): the exact bytes of a systemd credential, 4096 bytes at most |
+
+`keytab_file` and `key_file` stay, and are **not** deprecated: key material is
+binary, and secretsource's `file:` strips one trailing newline, which would
+change a keytab whose last byte is 0x0a. So `file:` is refused in `*_from`
+(write the path as `*_file`), and a reference with no scheme is refused too.
+A keytab larger than 4096 bytes does not fit a credential: keep it in
+`keytab_file`.
+
+With a systemd unit, seal the keytab to the machine and let systemd place it
+(`kdcd check` prints the reference, never the bytes):
+
+```
+systemd-creds encrypt --with-key=host+tpm2 --name=kdc-keytab kdc.keytab /etc/credstore.encrypted/kdc-keytab.cred
+```
+
+```ini
+[Service]
+LoadCredentialEncrypted=kdc-keytab:/etc/credstore.encrypted/kdc-keytab.cred
+LoadCredentialEncrypted=mint-key:/etc/credstore.encrypted/mint-key.cred
+```
+
+```hcl
+keytab_from = "systemd-creds:kdc-keytab"
+mint { key_from = "systemd-creds:mint-key" ... }
+```
+
+`--with-key=host+tpm2` with no `--tpm2-pcrs` survives a firmware or Secure Boot
+update; never seal with a bare `--tpm2-pcrs=7`. **Recovery**: the credential is
+lost with the TPM2 chip or `/var/lib/systemd/credential.secret`. Keep the
+keytab (and the mint key) in an offline copy; when the service fails with
+"may need re-sealing" (after a firmware, PCR or host-key change), run
+`systemd-creds encrypt` again from that copy and `systemctl restart kdcd`.
 
 `kdcd check --config FILE` reads and builds everything the daemon would, opens
 the directory, listens on nothing, and prints what it serves: the realm,

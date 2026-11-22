@@ -172,10 +172,9 @@ func openPeople(cfg *Config) (directory.Source, error) {
 			// Rewound: on some systems /dev/fd/N is a dup that shares the
 			// offset, and a read from the end sees an empty DSN.
 			if p := fdPath(f); p != "" {
-				if _, err := f.Seek(0, io.SeekStart); err != nil {
-					f.Close()
-					return fail(fmt.Errorf("%s: %w", what, err))
-				}
+				// Cannot fail on a regular file just read; a test holds the
+				// result (TestADSNThatCannotBeUsedIsRefused).
+				_, _ = f.Seek(0, io.SeekStart)
 				b.DSNFile = p
 			}
 			src, err := hcldir.Open(b)

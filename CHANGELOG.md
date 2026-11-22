@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.0
+
+- Added: `keytab_from` and `mint { key_from }` take a go-authn/secretsource
+  reference (v0.8.0), such as `systemd-creds:NAME`, so the keytab and the mint
+  key can be sealed to the machine (`LoadCredentialEncrypted=`) instead of
+  sitting in a file. `keytab_file` and `key_file` stay (they read binary key
+  material byte for byte); naming both a file and a reference is refused, and
+  `file:` is refused in `*_from`. `keytab_file` and `key_file` are now optional
+  in the schema, one of each pair is required.
+- Removed: a stray SQLite file committed by mistake in cmd/kdcd (its name was a
+  test DSN with a made-up password).
+
 ## v0.3.1
 
 Security audit 2026-11-21 (suspicions, go-authn/kdcd).

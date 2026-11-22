@@ -41,6 +41,15 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=20s
 
+# Optional: instead of keytab_file / key_file, a sealed credential
+# (keytab_from = "systemd-creds:kdc-keytab", key_from = "systemd-creds:mint-key").
+# Seal with `systemd-creds encrypt --with-key=host+tpm2 --name=kdc-keytab IN OUT`
+# (never a bare --tpm2-pcrs=7). If the TPM2 chip, the host key or the firmware
+# measurements change, the service fails closed: re-seal from the offline copy
+# of the keytab, then `systemctl restart kdcd`.
+#LoadCredentialEncrypted=kdc-keytab:/etc/credstore.encrypted/kdc-keytab.cred
+#LoadCredentialEncrypted=mint-key:/etc/credstore.encrypted/mint-key.cred
+
 ConfigurationDirectory=kdcd
 ConfigurationDirectoryMode=0750
 UMask=0077

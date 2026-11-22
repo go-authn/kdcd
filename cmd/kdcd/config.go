@@ -38,7 +38,8 @@ const (
 // impossible: secrets live in files, never in the configuration.
 type fileConfig struct {
 	Realm      string   `hcl:"realm"`
-	KeytabFile string   `hcl:"keytab_file"`
+	KeytabFile string   `hcl:"keytab_file,optional"`
+	KeytabFrom string   `hcl:"keytab_from,optional"`
 	Services   []string `hcl:"services,optional"`
 	Lifetime   string   `hcl:"lifetime,optional"`
 	MaxSkew    string   `hcl:"max_skew,optional"`
@@ -89,7 +90,8 @@ const defaultKKDCPPath = "/KdcProxy"
 type mintBlock struct {
 	Address      string   `hcl:"address,optional"`
 	CertFile     string   `hcl:"cert_file"`
-	KeyFile      string   `hcl:"key_file"`
+	KeyFile      string   `hcl:"key_file,optional"`
+	KeyFrom      string   `hcl:"key_from,optional"`
 	ClientCAFile string   `hcl:"client_ca_file"`
 	Callers      []string `hcl:"callers"`
 }
@@ -100,6 +102,7 @@ type Config struct {
 	Path       string
 	Realm      string
 	KeytabFile string
+	KeytabFrom string // a secretsource reference, instead of KeytabFile
 	Services   []string
 	Lifetime   time.Duration // zero: the library's default, ten hours
 	MaxSkew    time.Duration // zero: five minutes
@@ -121,6 +124,7 @@ type MintConfig struct {
 	Addr         string
 	CertFile     string
 	KeyFile      string
+	KeyFrom      string // a secretsource reference, instead of KeyFile
 	ClientCAFile string
 	Callers      []string
 }
@@ -190,13 +194,13 @@ func readConfigFile(path string) ([]byte, error) {
 }
 
 func (fc *fileConfig) resolve() (*Config, error) {
-	c := &Config{Realm: fc.Realm, KeytabFile: fc.KeytabFile, Services: fc.Services,
+	c := &Config{Realm: fc.Realm, KeytabFile: fc.KeytabFile, KeytabFrom: fc.KeytabFrom, Services: fc.Services,
 		Users: fc.Users, People: fc.People}
 	if !realmRE.MatchString(c.Realm) {
 		return nil, fmt.Errorf("realm %q: a realm is a DNS name in capitals, such as EXAMPLE.ORG", c.Realm)
 	}
-	if c.KeytabFile == "" {
-		return nil, fmt.Errorf("keytab_file is empty: the keytab holds krbtgt/%s@%s, which signs every ticket", c.Realm, c.Realm)
+	if err := checkKeyMaterial("keytab", keyMaterial{c.KeytabFile, c.KeytabFrom}); err != nil {
+		return nil, fmt.Errorf("%w (the keytab holds krbtgt/%s@%s, which signs every ticket)", err, c.Realm, c.Realm)
 	}
 	seen := map[string]bool{}
 	for _, s := range c.Services {
@@ -229,7 +233,7 @@ func (fc *fileConfig) resolve() (*Config, error) {
 
 	if m := fc.Mint; m != nil {
 		mc := &MintConfig{Addr: defaultMintAddr, CertFile: m.CertFile, KeyFile: m.KeyFile,
-			ClientCAFile: m.ClientCAFile, Callers: m.Callers}
+			KeyFrom: m.KeyFrom, ClientCAFile: m.ClientCAFile, Callers: m.Callers}
 		if m.Address != "" {
 			mc.Addr = m.Address
 		}
@@ -238,10 +242,13 @@ func (fc *fileConfig) resolve() (*Config, error) {
 		if mc.Addr, err = checkListen("mint address", mc.Addr, false); err != nil {
 			return nil, err
 		}
-		for name, v := range map[string]string{"cert_file": mc.CertFile, "key_file": mc.KeyFile, "client_ca_file": mc.ClientCAFile} {
+		for name, v := range map[string]string{"cert_file": mc.CertFile, "client_ca_file": mc.ClientCAFile} {
 			if v == "" {
 				return nil, fmt.Errorf("mint: %s is empty: the mint listener is mutual TLS and has no plain mode", name)
 			}
+		}
+		if err := checkKeyMaterial("key", keyMaterial{mc.KeyFile, mc.KeyFrom}); err != nil {
+			return nil, fmt.Errorf("mint: %w (the mint listener is mutual TLS and has no plain mode)", err)
 		}
 		if len(mc.Callers) == 0 {
 			// The library reads an empty list as "minting off"; a mint block

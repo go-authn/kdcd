@@ -39,12 +39,22 @@ type Runtime struct {
 // is already up.
 func Build(cfg *Config) (*Runtime, error) {
 	rt := &Runtime{Cfg: cfg}
-	kt, err := readKeytab(cfg.KeytabFile)
+	src := keyMaterial{cfg.KeytabFile, cfg.KeytabFrom}
+	var kt *keytab.Keytab
+	var err error
+	if src.From == "" {
+		kt, err = readKeytab(src.File)
+	} else {
+		var b []byte
+		if b, err = readKeyMaterial(src, "keytab"); err == nil {
+			kt, err = parseKeytab(b, src.From)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	if err := checkKeytab(kt, cfg); err != nil {
-		return nil, fmt.Errorf("keytab %s: %w", cfg.KeytabFile, err)
+		return nil, fmt.Errorf("keytab %s: %w", src.where(), err)
 	}
 	rt.Keytab = kt
 
@@ -90,7 +100,10 @@ func mintTLS(m *MintConfig) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyPEM, err := readSecret(m.KeyFile, "mint key_file")
+	keyPEM, err := readKeyMaterial(keyMaterial{m.KeyFile, m.KeyFrom}, "mint key")
+	if m.KeyFrom == "" && err != nil {
+		err = fmt.Errorf("mint key_file: %w", err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +266,7 @@ func (r *Runtime) Summary() string {
 	c := r.Cfg
 	fmt.Fprintf(&b, "realm        %s\n", c.Realm)
 	fmt.Fprintf(&b, "kdc          %s (tcp and udp)\n", c.KDCAddr)
-	fmt.Fprintf(&b, "keytab       %s\n", c.KeytabFile)
+	fmt.Fprintf(&b, "keytab       %s\n", keyMaterial{c.KeytabFile, c.KeytabFrom}.where())
 	var ps []string
 	for _, e := range r.Keytab.Entries {
 		ps = append(ps, fmt.Sprintf("%s@%s kvno %d etype %d", strings.Join(e.Principal.Components, "/"), e.Principal.Realm, e.KVNO, e.Key.KeyType))

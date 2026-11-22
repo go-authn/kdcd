@@ -3,12 +3,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"strings"
 
+	"github.com/go-authn/secretsource"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 )
 
@@ -87,12 +90,73 @@ func readKeytab(path string) (*keytab.Keytab, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseKeytab(b, path)
+}
+
+func parseKeytab(b []byte, where string) (*keytab.Keytab, error) {
 	kt := keytab.New()
 	if err := kt.Unmarshal(b); err != nil {
-		return nil, fmt.Errorf("keytab %s: %w", path, err)
+		return nil, fmt.Errorf("keytab %s: %w", where, err)
 	}
 	if len(kt.Entries) == 0 {
-		return nil, fmt.Errorf("keytab %s: %w", path, errEmptyKeytab)
+		return nil, fmt.Errorf("keytab %s: %w", where, errEmptyKeytab)
 	}
 	return kt, nil
+}
+
+// keyMaterial is where a piece of key material comes from: a file named by
+// `<name>_file` (read by readSecret, byte for byte, up to maxSecret) or a
+// secretsource reference named by `<name>_from`. Exactly one is set.
+type keyMaterial struct {
+	File string
+	From string
+}
+
+// where names the source for a message, never the secret.
+func (k keyMaterial) where() string {
+	if k.From != "" {
+		return k.From
+	}
+	return k.File
+}
+
+// checkKeyMaterial refuses none or both of `<name>_file` and `<name>_from`, and
+// a `_from` that is a file: reference.
+//
+// ⛔ `file:` is refused in `_from`: secretsource strips one trailing newline
+// from a file, which changes a binary keytab whose last byte is 0x0a, and
+// readSecret is the stricter reader (owner, no group access, up to maxSecret).
+// A path is written `<name>_file`. `systemd-creds:` returns the exact bytes.
+func checkKeyMaterial(name string, k keyMaterial) error {
+	switch {
+	case k.File != "" && k.From != "":
+		return fmt.Errorf("%s_file and %s_from are both set: name one source of the secret", name, name)
+	case k.File == "" && k.From == "":
+		return fmt.Errorf("%s_file is empty: name the file, or give %s_from a secretsource reference (systemd-creds:NAME)", name, name)
+	}
+	if strings.HasPrefix(k.From, "file:") {
+		return fmt.Errorf("%s_from: a file: reference is not accepted (it strips a trailing newline, which alters binary key material); write the path as %s_file", name, name)
+	}
+	if k.From != "" {
+		if _, err := secretsource.Parse(k.From); err != nil {
+			return fmt.Errorf("%s_from: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// readKeyMaterial returns the bytes the source holds.
+func readKeyMaterial(k keyMaterial, what string) ([]byte, error) {
+	if k.From == "" {
+		return readSecret(k.File, what)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), secretsource.Timeout)
+	defer cancel()
+	s, err := secretsource.Open(ctx, k.From)
+	if err != nil {
+		return nil, fmt.Errorf("%s_from %s: %w", what, k.From, err)
+	}
+	defer s.Close()
+	// Copy: Close wipes the secret's own buffer.
+	return append([]byte(nil), s.Bytes()...), nil
 }

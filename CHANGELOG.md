@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.1
+
+Security audit 2026-11-21 (suspicions, go-authn/kdcd).
+
+- Fixed: the configuration file's owner is checked, as the keytab's and the
+  secrets' already were: root or the account the daemon runs as. Its mode was
+  checked but not its owner, and the owner of a file can make it writable again
+  after the check.
+- Fixed: a `dsn_file` is no longer read twice by name. It was checked, then
+  opened again by the directory library, so a path swapped in between was used
+  unchecked. The library is now given `/dev/fd/N` of the file that was checked
+  (Windows keeps the name; it has no such namespace).
+- Bumped go-authn/kdc to v0.10.0 (a limit of 16 TCP connections per source
+  address).
+
 ## v0.3.0
 
 - Added: a `kkdcp { listen = "IP:port" }` block (optional `path`, default

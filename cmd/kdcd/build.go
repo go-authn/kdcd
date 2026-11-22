@@ -139,6 +139,10 @@ func readPublic(path, what string) ([]byte, error) {
 	return b, nil
 }
 
+// afterDSNCheck runs between checking a DSN file and opening the directory
+// with it; a test swaps the path there. Nothing else sets it.
+var afterDSNCheck = func() {}
+
 // openPeople opens the directory: the users blocks, then the user blocks, as
 // one set. It closes what it opened when one fails.
 func openPeople(cfg *Config) (directory.Source, error) {
@@ -153,13 +157,33 @@ func openPeople(cfg *Config) (directory.Source, error) {
 		// no password.
 		if b.DSNFile != "" {
 			what := fmt.Sprintf("users %q dsn_file", b.Kind)
-			raw, err := readSecret(b.DSNFile, what)
+			f, raw, err := openSecret(b.DSNFile, what)
 			if err != nil {
 				return fail(err)
 			}
 			if err := checkDSN(raw, what); err != nil {
+				f.Close()
 				return fail(err)
 			}
+			afterDSNCheck()
+			// ⛔ Open the file that was checked, not its name: hcldir reads
+			// the path it is given, and a path swapped since the check names
+			// another file. /dev/fd/N reopens this very inode.
+			// Rewound: on some systems /dev/fd/N is a dup that shares the
+			// offset, and a read from the end sees an empty DSN.
+			if p := fdPath(f); p != "" {
+				// Cannot fail on a regular file just read; a test holds the
+				// result (TestADSNThatCannotBeUsedIsRefused).
+				_, _ = f.Seek(0, io.SeekStart)
+				b.DSNFile = p
+			}
+			src, err := hcldir.Open(b)
+			f.Close()
+			if err != nil {
+				return fail(fmt.Errorf("users %q: %w", b.Kind, err))
+			}
+			set.Add(src)
+			continue
 		}
 		src, err := hcldir.Open(b)
 		if err != nil {

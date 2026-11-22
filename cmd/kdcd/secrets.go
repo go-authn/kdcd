@@ -36,34 +36,48 @@ var errEmptyKeytab = errors.New("it holds no key")
 // daemon as its own user and the files belong to it (or to root, who is not
 // bound by the mode), so no group needs to read them.
 func readSecret(path, what string) ([]byte, error) {
+	f, b, err := openSecret(path, what)
+	if err != nil {
+		return nil, err
+	}
+	f.Close()
+	return b, nil
+}
+
+// openSecret is readSecret that keeps the checked file open, for a caller
+// that must hand a library the SAME file it checked and not its name.
+func openSecret(path, what string) (*os.File, []byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", what, path, err)
+		return nil, nil, fmt.Errorf("%s %s: %w", what, path, err)
 	}
-	defer f.Close()
+	fail := func(err error) (*os.File, []byte, error) {
+		f.Close()
+		return nil, nil, err
+	}
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", what, path, err)
+		return fail(fmt.Errorf("%s %s: %w", what, path, err))
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s %s is not a regular file", what, path)
+		return fail(fmt.Errorf("%s %s is not a regular file", what, path))
 	}
 	if runtime.GOOS != "windows" {
 		if m := fi.Mode().Perm(); m&0o077 != 0 {
-			return nil, fmt.Errorf("%s %s is mode %04o: group and others must not be able to read or write it (chmod 0600)", what, path, m)
+			return fail(fmt.Errorf("%s %s is mode %04o: group and others must not be able to read or write it (chmod 0600)", what, path, m))
 		}
 		if err := ownerOK(fi); err != nil {
-			return nil, fmt.Errorf("%s %s: %w", what, path, err)
+			return fail(fmt.Errorf("%s %s: %w", what, path, err))
 		}
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxSecret+1))
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", what, path, err)
+		return fail(fmt.Errorf("%s %s: %w", what, path, err))
 	}
 	if len(b) > maxSecret {
-		return nil, fmt.Errorf("%s %s is larger than %d bytes", what, path, maxSecret)
+		return fail(fmt.Errorf("%s %s is larger than %d bytes", what, path, maxSecret))
 	}
-	return b, nil
+	return f, b, nil
 }
 
 // readKeytab reads and parses the keytab named by path, under readSecret's

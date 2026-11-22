@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/go-authn/directory v0.17.0
-	github.com/go-authn/kdc v0.9.0
+	github.com/go-authn/kdc v0.10.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.12.0

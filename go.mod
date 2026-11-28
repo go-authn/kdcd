@@ -3,9 +3,9 @@ module github.com/go-authn/kdcd
 go 1.27.4
 
 require (
-	github.com/go-authn/directory v0.17.0
-	github.com/go-authn/kdc v0.10.0
-	github.com/go-authn/secretsource v0.9.0
+	github.com/go-authn/directory v0.27.0
+	github.com/go-authn/kdc v0.13.0
+	github.com/go-authn/secretsource v0.12.1
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.12.0
@@ -25,6 +25,7 @@ require (
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-authn/harden v0.2.0 // indirect
+	github.com/go-authn/ldap v0.15.0 // indirect
 	github.com/go-freedesktop/secretservice v0.4.0 // indirect
 	github.com/go-ldap/ldap/v3 v3.4.15 // indirect
 	github.com/go-macos/keychain v0.3.1 // indirect

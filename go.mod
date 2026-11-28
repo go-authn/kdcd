@@ -6,13 +6,13 @@ require (
 	github.com/go-authn/directory v0.17.0
 	github.com/go-authn/kdc v0.10.0
 	github.com/go-authn/secretsource v0.9.0
-	github.com/go-sql-driver/mysql v1.10.1
+	github.com/go-sql-driver/mysql v1.11.0
 	github.com/hashicorp/hcl/v2 v2.25.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/jcmturner/gofork v1.7.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/spf13/cobra v1.10.2
-	modernc.org/sqlite v1.61.1
+	modernc.org/sqlite v1.63.0
 )
 
 require (
@@ -53,7 +53,7 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
